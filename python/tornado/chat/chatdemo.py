@@ -18,12 +18,17 @@ import asyncio
 import tornado
 import os.path
 import uuid
+import json
+import time
 
 from tornado.options import define, options, parse_command_line
+from tornado import gen
 
 define("port", default=8888, help="run on the given port", type=int)
 define("debug", default=True, help="run in debug mode")
 
+global host
+host = "uninited"
 
 class MessageBuffer(object):
     def __init__(self):
@@ -48,7 +53,7 @@ class MessageBuffer(object):
     def add_message(self, message):
         self.cache.append(message)
         if len(self.cache) > self.cache_size:
-            self.cache = self.cache[-self.cache_size :]
+            self.cache = self.cache[-self.cache_size:]
         self.cond.notify_all()
 
 
@@ -104,6 +109,37 @@ class MessageUpdatesHandler(tornado.web.RequestHandler):
         self.wait_future.cancel()
 
 
+class RunForever(tornado.web.RequestHandler):
+    async def post(self):
+        nStr = self.get_argument("Count", 100)
+        n = int(nStr)
+        counter = 0
+        while True:
+            # do something indefinitely
+            if counter % 2 == 0:
+                print("RunForever counter=" + str(counter))
+            if counter > n:
+                break
+            counter += 1
+            time.sleep(1)
+        print("RunForever finished with n=" + str(counter))
+        self.write({'Response': "DONE!"})
+        self.finish()
+        return
+
+
+class Ping(tornado.web.RequestHandler):
+    async def get(self):
+
+        current_time = time.strftime("%H:%M:%S", time.localtime())
+        print("Current time:", current_time)
+        print(host)
+
+        self.write({'Response': "PONG!"})
+        self.finish()
+        return
+
+
 async def main():
     parse_command_line()
     app = tornado.web.Application(
@@ -111,11 +147,12 @@ async def main():
             (r"/", MainHandler),
             (r"/a/message/new", MessageNewHandler),
             (r"/a/message/updates", MessageUpdatesHandler),
+            (r"/runforever", RunForever),
+            (r"/ping", Ping),
         ],
         cookie_secret="__TODO:_GENERATE_YOUR_OWN_RANDOM_VALUE_HERE__",
         template_path=os.path.join(os.path.dirname(__file__), "templates"),
         static_path=os.path.join(os.path.dirname(__file__), "static"),
-        xsrf_cookies=True,
         debug=options.debug,
     )
     app.listen(options.port)
@@ -123,4 +160,24 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # asyncio.run(main())
+    parse_command_line()
+
+    app = tornado.web.Application(handlers=[
+        (r"/", MainHandler),
+        (r"/a/message/new", MessageNewHandler),
+        (r"/a/message/updates", MessageUpdatesHandler),
+        (r"/runforever", RunForever),
+        (r"/ping", Ping),
+    ],
+        cookie_secret="__TODO:_GENERATE_YOUR_OWN_RANDOM_VALUE_HERE__",
+        template_path=os.path.join(os.path.dirname(__file__), "templates"),
+        static_path=os.path.join(os.path.dirname(__file__), "static"),
+        debug=options.debug,
+    )
+
+    host = "localhost"
+
+    http_server = tornado.httpserver.HTTPServer(app)
+    http_server.listen(9000)
+    tornado.ioloop.IOLoop.instance().start()
